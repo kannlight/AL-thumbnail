@@ -1,4 +1,4 @@
-import { GoogleGenAI, Chat, GenerateContentResponse } from "@google/genai";
+import { GoogleGenAI, Chat, GenerateContentResponse, Type, Tool } from "@google/genai";
 
 // ============================================================
 // シングルトン クライアント
@@ -26,8 +26,11 @@ export const GEMINI_MODEL =
 // システムプロンプト（MCP 未実装段階の暫定版）
 // ============================================================
 export const SYSTEM_INSTRUCTION =
-    "あなたは遊戯王OCGの対戦動画サムネイルを作成するアシスタントです。" +
-    "ユーザーの要望に応じて 16:9 のサムネイル画像を生成してください。";
+    "あなたは遊戯王OCGの対戦動画サムネイルを作成するアシスタントです。\n" +
+    "以下のルールに従い、サムネイル画像を生成してください。\n" +
+    "1. ユーザーの要望に応じて、必ずMCPツール（get_theme_illustrations または get_card_illustration）を使用し、関連するイラストを参照する。\n" +
+    "2. MCPから取得したイラストを参照画像として扱う。参照画像の配置や背景を変更する程度に留め、できるだけ参照画像をそのまま使用する。\n" +
+    "3. アスペクト比は16:9で生成する。\n";
 
 // ============================================================
 // Generation Config
@@ -39,6 +42,49 @@ export const GENERATION_CONFIG = {
         imageSize: "1K",
     },
 };
+
+// ============================================================
+// MCP Function Declarations（Gemini Function Calling 定義）
+// ============================================================
+export const MCP_TOOLS = [
+    {
+        functionDeclarations: [
+            {
+                name: "get_card_illustration",
+                description: "指定されたカード名の公式イラストを取得します",
+                parameters: {
+                    type: Type.OBJECT,
+                    properties: {
+                        card_name: {
+                            type: Type.STRING,
+                            description: "取得したいカードの名前",
+                        },
+                    },
+                    required: ["card_name"],
+                },
+            },
+            {
+                name: "get_theme_illustrations",
+                description:
+                    "指定されたテーマ（アーキタイプ）に属するカードのイラストを複数取得します",
+                parameters: {
+                    type: Type.OBJECT,
+                    properties: {
+                        theme: {
+                            type: Type.STRING,
+                            description: "テーマ名（例: ブルーアイズ、ブラック・マジシャン）",
+                        },
+                        limit: {
+                            type: Type.NUMBER,
+                            description: "取得するイラストの最大枚数（デフォルト: 5）",
+                        },
+                    },
+                    required: ["theme"],
+                },
+            },
+        ],
+    },
+] as Tool[];
 
 // ============================================================
 // チャットセッションの型
@@ -70,6 +116,7 @@ export function createChat(history: GeminiHistoryItem[]): Chat {
                 aspectRatio: "16:9",
                 imageSize: "1K",
             },
+            tools: MCP_TOOLS,
         },
         history,
     });
