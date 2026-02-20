@@ -6,7 +6,7 @@
 ## 前提条件
 - 全工程（1〜6）が完了していること
 - Firebase プロジェクトが作成済みであること
-- Google Cloud プロジェクトに必要な API が有効化されていること
+- Firebase App Hosting の初期設定が行われていること
 
 ---
 
@@ -25,39 +25,20 @@ runConfig:
   cpu: 1
 
 env:
-  - variable: GEMINI_API_KEY
-    secret: gemini-api-key       # Secret Manager のシークレット名
-  - variable: AUTH_PASSWORD
-    secret: al-thumbnail-password
   - variable: MCP_SERVER_URL
     value: https://your-mcp-server-url
 ```
 
 > [!IMPORTANT]
-> `GEMINI_API_KEY` と `AUTH_PASSWORD` は Secret Manager で管理し、`apphosting.yaml` では `secret` フィールドで参照すること。  
-> 平文の値を直接書かないこと。
+> `GEMINI_API_KEY` と `AUTH_PASSWORD` などの機密情報は、Firebase コンソールの App Hosting 設定画面から直接環境変数（シークレット）として登録することを推奨します。  
+> `apphosting.yaml` に平文で書き込まないよう注意してください。
 
-### 7-2. Secret Manager の設定
+### 7-2. 環境変数（シークレット）の設定
 
-本番環境で使用するシークレットを登録する。
+Firebase Console から、対象の App Hosting バックエンドを開き、「設定」タブの「環境変数」セクションから以下の変数を登録します。
 
-```bash
-# Gemini API キー
-gcloud secrets create gemini-api-key --project=YOUR_PROJECT_ID
-echo -n "your-api-key" | gcloud secrets versions add gemini-api-key --data-file=- --project=YOUR_PROJECT_ID
-
-# パスワード（工程2で作成済みなら確認のみ）
-gcloud secrets create al-thumbnail-password --project=YOUR_PROJECT_ID
-echo -n "your-password" | gcloud secrets versions add al-thumbnail-password --data-file=- --project=YOUR_PROJECT_ID
-```
-
-Firebase App Hosting のサービスアカウントに `roles/secretmanager.secretAccessor` を付与する。
-
-```bash
-gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
-  --member="serviceAccount:YOUR_APP_HOSTING_SA@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
-  --role="roles/secretmanager.secretAccessor"
-```
+- `GEMINI_API_KEY`: Gemini API キー
+- `AUTH_PASSWORD`: アプリケーションの認証パスワード
 
 ### 7-3. ビルド確認
 
@@ -109,8 +90,8 @@ firebase apphosting:backends:create --project=YOUR_PROJECT_ID
 
 | 症状 | 原因の可能性 | 対処 |
 |---|---|---|
-| 500 エラー | Secret Manager へのアクセス権限不足 | サービスアカウントの権限を確認 |
-| API キーエラー | 環境変数が読み込まれていない | `apphosting.yaml` の `env` 設定を確認 |
+| 認証エラー | 環境変数が設定されていない | Firebase Console で `AUTH_PASSWORD` を確認 |
+| API キーエラー | 環境変数が読み込まれていない | Firebase Console で `GEMINI_API_KEY` を確認 |
 | MCP接続失敗 | MCPサーバーURLが間違っている / サーバーが停止 | URL確認、MCPサーバーのログ確認 |
 | 画像が表示されない | Content-Security-Policy による制限 | CSP ヘッダーの調整 |
 | ビルドエラー | Node.js バージョン不一致 | `package.json` の `engines` フィールドを確認 |
@@ -121,4 +102,4 @@ firebase apphosting:backends:create --project=YOUR_PROJECT_ID
 - [ ] 本番 URL でアプリケーションにアクセスできる
 - [ ] 上記チェックリストの全項目が合格する
 - [ ] HTTPS でセキュアに通信できる
-- [ ] Secret Manager からシークレットが正しく取得される
+- [ ] 環境変数が適切に読み込まれている
