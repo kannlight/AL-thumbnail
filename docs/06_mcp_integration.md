@@ -54,7 +54,7 @@ MCPサーバーが提供するツールの仕様（確定次第更新するこ�
 | 項目 | 内容 |
 |---|---|
 | 説明 | テーマ（アーキタイプ）に属するカードイラストを複数取得する |
-| パラメータ | `{ "theme": "string", "limit?": "number" }` |
+| パラメータ | `{ "theme_name": "string", "limit?": "number" }` |
 | 戻り値 | `{ "illustrations": [{ "card_name": "string", "mimeType": "image/png", "data": "<base64>" }] }` |
 
 ---
@@ -122,7 +122,7 @@ const tools = [
         parameters: {
           type: "OBJECT",
           properties: {
-            theme: {
+            theme_name: {
               type: "STRING",
               description: "テーマ名（例: ブルーアイズ、ブラック・マジシャン）",
             },
@@ -131,7 +131,7 @@ const tools = [
               description: "取得するイラストの最大枚数（デフォルト: 5）",
             },
           },
-          required: ["theme"],
+          required: ["theme_name"],
         },
       },
     ],

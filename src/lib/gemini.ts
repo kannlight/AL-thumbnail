@@ -70,7 +70,7 @@ export const MCP_TOOLS = [
                 parameters: {
                     type: Type.OBJECT,
                     properties: {
-                        theme: {
+                        theme_name: {
                             type: Type.STRING,
                             description: "テーマ名（例: ブルーアイズ、ブラック・マジシャン）",
                         },
@@ -79,7 +79,7 @@ export const MCP_TOOLS = [
                             description: "取得するイラストの最大枚数（デフォルト: 5）",
                         },
                     },
-                    required: ["theme"],
+                    required: ["theme_name"],
                 },
             },
         ],

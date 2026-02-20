@@ -121,6 +121,35 @@ export async function POST(request: NextRequest) {
                 functionCalls.map(async (fc) => {
                     try {
                         const result = await mcpClient.executeTool(fc.name, fc.args);
+
+                        // ===== MCPレスポンスの詳細ログ =====
+                        console.log(`[chat/route] MCPツール "${fc.name}" レスポンス全体:`, JSON.stringify(result, null, 2));
+
+                        // content 配列の各要素を個別にログ出力
+                        const mcpResult = result as Record<string, unknown>;
+                        const contents = (mcpResult?.content ?? mcpResult?.contents) as Array<Record<string, unknown>> | undefined;
+                        if (Array.isArray(contents)) {
+                            console.log(`[chat/route] MCPレスポンス content件数: ${contents.length}`);
+                            contents.forEach((item, idx) => {
+                                const type = item?.type;
+                                console.log(`[chat/route]   content[${idx}] type: ${type}`);
+                                if (type === "image") {
+                                    const data = item?.data as string | undefined;
+                                    const mimeType = item?.mimeType ?? item?.mime_type;
+                                    console.log(`[chat/route]   content[${idx}] mimeType: ${mimeType}`);
+                                    console.log(`[chat/route]   content[${idx}] data (先頭100文字): ${data ? data.slice(0, 100) : "(なし)"}`);
+                                    console.log(`[chat/route]   content[${idx}] dataLength: ${data ? data.length : 0}`);
+                                } else if (type === "text") {
+                                    console.log(`[chat/route]   content[${idx}] text: ${item?.text}`);
+                                } else {
+                                    console.log(`[chat/route]   content[${idx}] keys: ${Object.keys(item ?? {}).join(", ")}`);
+                                }
+                            });
+                        } else {
+                            console.log(`[chat/route] MCPレスポンスに content 配列が見つかりません。キー一覧: ${Object.keys(mcpResult ?? {}).join(", ")}`);
+                        }
+                        // ===== ログここまで =====
+
                         return {
                             functionResponse: {
                                 name: fc.name,
