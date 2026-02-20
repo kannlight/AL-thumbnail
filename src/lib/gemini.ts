@@ -23,14 +23,15 @@ export const GEMINI_MODEL =
     process.env.GEMINI_MODEL ?? "gemini-3-pro-image-preview";
 
 // ============================================================
-// システムプロンプト（MCP 未実装段階の暫定版）
+// システムプロンプト
 // ============================================================
 export const SYSTEM_INSTRUCTION =
     "あなたは遊戯王OCGの対戦動画サムネイルを作成するアシスタントです。\n" +
     "以下のルールに従い、サムネイル画像を生成してください。\n" +
-    "1. ユーザーの要望に応じて、必ずMCPツール（get_theme_illustrations または get_card_illustration）を使用し、関連するイラストを参照する。\n" +
-    "2. MCPから取得したイラストを参照画像として扱う。参照画像の配置や背景を変更する程度に留め、できるだけ参照画像をそのまま使用する。\n" +
-    "3. アスペクト比は16:9で生成する。\n";
+    "1. ユーザーの要望に応じて、必ずMCPツール（get_theme_illustrations または get_card_illustration）を使用し、関連するイラストのURLを取得する。\n" +
+    "2. 取得したイラストを参照画像として扱う。参照画像の配置や背景を変更する程度に留め、できるだけ参照画像をそのまま使用する。\n" +
+    "3. 参照画像を正しく認識できない場合はエラーが起きたことをユーザーへ伝える。\n" +
+    "4. アスペクト比は16:9で生成する。\n";
 
 // ============================================================
 // Generation Config
@@ -51,7 +52,7 @@ export const MCP_TOOLS = [
         functionDeclarations: [
             {
                 name: "get_card_illustration",
-                description: "指定されたカード名の公式イラストを取得します",
+                description: "指定したカードのイラストURLを取得します。",
                 parameters: {
                     type: Type.OBJECT,
                     properties: {
@@ -65,18 +66,13 @@ export const MCP_TOOLS = [
             },
             {
                 name: "get_theme_illustrations",
-                description:
-                    "指定されたテーマ（アーキタイプ）に属するカードのイラストを複数取得します",
+                description: "指定したテーマに属するカードのイラストURLを最大10件取得します。",
                 parameters: {
                     type: Type.OBJECT,
                     properties: {
                         theme_name: {
                             type: Type.STRING,
-                            description: "テーマ名（例: ブルーアイズ、ブラック・マジシャン）",
-                        },
-                        limit: {
-                            type: Type.NUMBER,
-                            description: "取得するイラストの最大枚数（デフォルト: 5）",
+                            description: "テーマ名",
                         },
                     },
                     required: ["theme_name"],

@@ -133,14 +133,11 @@ export async function POST(request: NextRequest) {
                             contents.forEach((item, idx) => {
                                 const type = item?.type;
                                 console.log(`[chat/route]   content[${idx}] type: ${type}`);
-                                if (type === "image") {
-                                    const data = item?.data as string | undefined;
-                                    const mimeType = item?.mimeType ?? item?.mime_type;
-                                    console.log(`[chat/route]   content[${idx}] mimeType: ${mimeType}`);
-                                    console.log(`[chat/route]   content[${idx}] data (先頭100文字): ${data ? data.slice(0, 100) : "(なし)"}`);
-                                    console.log(`[chat/route]   content[${idx}] dataLength: ${data ? data.length : 0}`);
-                                } else if (type === "text") {
+                                if (type === "text") {
                                     console.log(`[chat/route]   content[${idx}] text: ${item?.text}`);
+                                } else if (type === "image") {
+                                    const mimeType = item?.mimeType ?? item?.mime_type;
+                                    console.log(`[chat/route]   content[${idx}] image, mimeType: ${mimeType}`);
                                 } else {
                                     console.log(`[chat/route]   content[${idx}] keys: ${Object.keys(item ?? {}).join(", ")}`);
                                 }
@@ -175,14 +172,63 @@ export async function POST(request: NextRequest) {
                 })
             );
 
-            // Function Response を Gemini に返す
-            const functionResponseParts: Part[] = functionResponses.map((fr) => ({
-                functionResponse: {
-                    name: fr.functionResponse.name,
-                    response: fr.functionResponse.response,
-                },
-            }));
-            response = await chat.sendMessage({ message: functionResponseParts });
+            // Function Response と 抽出した fileData を Gemini に返す
+            const messageParts: Part[] = [];
+            const fileDataParts: Part[] = [];
+            for (const fr of functionResponses) {
+                // 1. 本来の functionResponse を追加
+                messageParts.push({
+                    functionResponse: {
+                        name: fr.functionResponse.name,
+                        response: fr.functionResponse.response,
+                    },
+                });
+
+                // 2. response 内のテキストから fileData JSON を抽出して追加
+                const mcpResult = fr.functionResponse.response as Record<string, unknown>;
+                const contents = (mcpResult?.content ?? mcpResult?.contents) as Array<Record<string, unknown>> | undefined;
+
+                if (Array.isArray(contents)) {
+                    for (const item of contents) {
+                        if (item.type === "text" && typeof item.text === "string") {
+                            const fileDataRegex = /```json\s*(\{[\s\S]*?"fileData"[\s\S]*?\})\s*```/g;
+                            let match;
+                            while ((match = fileDataRegex.exec(item.text)) !== null) {
+                                try {
+                                    const parsed = JSON.parse(match[1]);
+                                    if (parsed?.fileData?.fileUri && parsed?.fileData?.mimeType) {
+                                        fileDataParts.push({
+                                            fileData: {
+                                                fileUri: parsed.fileData.fileUri,
+                                                mimeType: parsed.fileData.mimeType,
+                                            },
+                                        });
+                                        console.log(`[chat/route] 抽出した fileData を履歴のユーザーパートに追加予定: ${parsed.fileData.fileUri}`);
+                                    }
+                                } catch (e) {
+                                    console.warn("[chat/route] fileData JSON のパースに失敗しました:", match[1]);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // 抽出した画像がある場合は、エラーを避けるため functionResponse とは別に、
+            // 履歴上の「直前のユーザーメッセージ」に遡って画像パートを追加する
+            if (fileDataParts.length > 0) {
+                const history = await chat.getHistory();
+                for (let i = history.length - 1; i >= 0; i--) {
+                    if (history[i].role === "user") {
+                        if (!history[i].parts) {
+                            history[i].parts = [];
+                        }
+                        history[i].parts!.push(...fileDataParts);
+                        break;
+                    }
+                }
+            }
+
+            response = await chat.sendMessage({ message: messageParts });
             functionCallCount++;
         }
 
