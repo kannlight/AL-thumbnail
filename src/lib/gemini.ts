@@ -45,6 +45,10 @@ export const GENERATION_CONFIG = {
 // ============================================================
 export interface GeminiHistoryPart {
     text?: string;
+    inlineData?: {
+        mimeType: string;
+        data: string;
+    };
 }
 
 export interface GeminiHistoryItem {
@@ -76,7 +80,9 @@ export function createChat(history: GeminiHistoryItem[]): Chat {
 // ============================================================
 export interface ParsedGeminiResponse {
     text: string;
-    images: { mimeType: string; data: string }[];
+    images: { mimeType: string; data: string; thoughtSignature?: string }[];
+    // テキストパートの thoughtSignature（最後のパートに含まれることが多い）
+    textThoughtSignature?: string;
 }
 
 export function parseGeminiResponse(
@@ -84,15 +90,21 @@ export function parseGeminiResponse(
 ): ParsedGeminiResponse {
     const parts = response.candidates?.[0]?.content?.parts ?? [];
     const texts: string[] = [];
-    const images: { mimeType: string; data: string }[] = [];
+    const images: { mimeType: string; data: string; thoughtSignature?: string }[] = [];
+    let textThoughtSignature: string | undefined;
 
     for (const part of parts) {
         if (part.text) {
             texts.push(part.text);
+            // テキストパートの thoughtSignature を保持
+            if (part.thoughtSignature) {
+                textThoughtSignature = part.thoughtSignature;
+            }
         } else if (part.inlineData?.data && part.inlineData?.mimeType) {
             images.push({
                 mimeType: part.inlineData.mimeType,
                 data: part.inlineData.data,
+                thoughtSignature: part.thoughtSignature,
             });
         }
     }
@@ -100,5 +112,6 @@ export function parseGeminiResponse(
     return {
         text: texts.join("\n").trim(),
         images,
+        textThoughtSignature,
     };
 }

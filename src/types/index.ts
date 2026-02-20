@@ -12,6 +12,7 @@ export interface ChatImage {
     id: string;
     mimeType: string;
     data: string;
+    thoughtSignature?: string;
 }
 
 export interface ChatSession {
