@@ -107,15 +107,15 @@ export interface GeminiHistoryItem {
 // ============================================================
 // チャットセッション作成
 // ============================================================
-export function createMcpChat(history: GeminiHistoryItem[]): Chat {
+export async function callMcpAgent(message: string): Promise<GenerateContentResponse> {
     const ai = getAI();
-    return ai.chats.create({
+    return ai.models.generateContent({
         model: "gemini-3-flash-preview",
+        contents: message,
         config: {
             systemInstruction: MCP_AGENT_PROMPT,
             tools: MCP_TOOLS,
         },
-        history,
     });
 }
 

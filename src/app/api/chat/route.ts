@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-    createMcpChat,
+    callMcpAgent,
     createImageGenChat,
     parseGeminiResponse,
     GeminiHistoryItem,
@@ -114,8 +114,7 @@ export async function POST(request: NextRequest) {
             // ==========================================
             // パターンA: 初回リクエスト（MCPツール判定）
             // ==========================================
-            let chat = createMcpChat(history);
-            let response = await chat.sendMessage({ message: message.trim() });
+            let response = await callMcpAgent(message.trim());
 
             if (hasFunctionCall(response)) {
                 const functionCalls = extractFunctionCalls(response);
