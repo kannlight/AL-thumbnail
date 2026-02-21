@@ -53,8 +53,11 @@ export function useChat() {
         setPendingMessage("");
 
         try {
+            // キャンセルされたメッセージ等を除外
+            const validMessages = updatedMessages.filter(msg => !msg.excludeFromHistory);
+
             // Gemini APIのhistory形式に変換 (直近10ターン分程度に絞る)
-            const historyToSend = updatedMessages.slice(-20).map(msg => {
+            const historyToSend = validMessages.slice(-20).map(msg => {
                 const parts: any[] = [];
                 const isModel = msg.role === "assistant";
 
@@ -190,8 +193,11 @@ export function useChat() {
         setPendingMessage("");
 
         try {
+            // キャンセルされたメッセージ等を除外
+            const validMessages = messages.filter(msg => !msg.excludeFromHistory);
+
             // 最新のメッセージはユーザーの pendingMessage のはず
-            const historyToSend = messages.slice(-20).map(msg => {
+            const historyToSend = validMessages.slice(-20).map(msg => {
                 const parts: any[] = [];
                 const isModel = msg.role === "assistant";
 
@@ -284,14 +290,27 @@ export function useChat() {
         setPendingMessage("");
         setMessages((prev) => {
             const newMessages = [...prev];
-            // ユーザーの最後のリクエストを取り消す
+            // ユーザーの最後のリクエストを取り消す（画面には残すが履歴からは除外）
             if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === "user") {
-                newMessages.pop();
+                newMessages[newMessages.length - 1] = {
+                    ...newMessages[newMessages.length - 1],
+                    excludeFromHistory: true
+                };
             }
+            // キャンセルメッセージを追加（履歴からは除外）
+            const cancelMessage: ChatMessage = {
+                id: Date.now().toString(),
+                role: "assistant",
+                text: "画像の選択がキャンセルされました。このメッセージと直前のリクエストはAIに送信されません。",
+                timestamp: Date.now(),
+                excludeFromHistory: true
+            };
+            newMessages.push(cancelMessage);
+            saveHistory(currentSessionId, newMessages);
             return newMessages;
         });
         setIsLoading(false);
-    }, []);
+    }, [currentSessionId]);
 
     // 履歴を復元する関数
     const loadSession = useCallback(async (sessionId: string) => {

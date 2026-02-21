@@ -6,6 +6,7 @@ export interface ChatMessage {
     text: string;
     images?: ChatImage[];
     timestamp: number;
+    excludeFromHistory?: boolean;
 }
 
 export interface ChatImage {

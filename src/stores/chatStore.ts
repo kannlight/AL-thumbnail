@@ -6,6 +6,8 @@ export interface ChatMessage {
     timestamp: number;
     // Gemini 3 の thought_signature（テキストパート用）
     textThoughtSignature?: string;
+    // キャンセル時など、画面には残すが履歴として送信しないためのフラグ
+    excludeFromHistory?: boolean;
 }
 
 export interface ChatSession {
