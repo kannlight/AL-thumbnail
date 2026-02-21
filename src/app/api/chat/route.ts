@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
 
     try {
         // 3. チャットセッション構築
-        const chat = createChat(history);
+        let chat = createChat(history);
 
         // 4. メッセージ送信
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -209,6 +209,16 @@ export async function POST(request: NextRequest) {
                                     console.warn("[chat/route] fileData JSON のパースに失敗しました:", match[1]);
                                 }
                             }
+                        } else if (item.type === "image" && typeof item.data === "string") {
+                            // MCPの画像データ(base64)を抽出して追加
+                            const mimeType = item.mimeType ?? item.mime_type ?? "image/jpeg";
+                            fileDataParts.push({
+                                inlineData: {
+                                    data: item.data,
+                                    mimeType: String(mimeType),
+                                }
+                            });
+                            console.log(`[chat/route] 抽出した画像(inlineData)を履歴のユーザーパートに追加予定: ${mimeType}`);
                         }
                     }
                 }
@@ -216,17 +226,41 @@ export async function POST(request: NextRequest) {
             // 抽出した画像がある場合は、エラーを避けるため functionResponse とは別に、
             // 履歴上の「直前のユーザーメッセージ」に遡って画像パートを追加する
             if (fileDataParts.length > 0) {
-                const history = await chat.getHistory();
-                for (let i = history.length - 1; i >= 0; i--) {
-                    if (history[i].role === "user") {
-                        if (!history[i].parts) {
-                            history[i].parts = [];
+                const historySnapshot = await chat.getHistory();
+                for (let i = historySnapshot.length - 1; i >= 0; i--) {
+                    if (historySnapshot[i].role === "user") {
+                        if (!historySnapshot[i].parts) {
+                            historySnapshot[i].parts = [];
                         }
-                        history[i].parts!.push(...fileDataParts);
+                        historySnapshot[i].parts!.push(...fileDataParts as never[]);
                         break;
                     }
                 }
+                // getHistory() から返される配列はクローンのため、
+                // 変更を反映させるにはチャットセッションを再構築する必要がある
+                chat = createChat(historySnapshot as unknown as GeminiHistoryItem[]);
             }
+
+            console.log("\n[chat/route] =========================================");
+            console.log("[chat/route] Gemini API に送信する直前のメッセージ内容 (messageParts):");
+            // functionResponse 内の巨大なbase64ログ出力を省略するためのヘルパー
+            const safeMessageParts = JSON.stringify(messageParts, (key, value) => {
+                if (key === "data" && typeof value === "string" && value.length > 100) {
+                    return value.slice(0, 50) + "...(省略: " + value.length + "文字)";
+                }
+                return value;
+            }, 2);
+            console.log(safeMessageParts);
+
+            console.log("[chat/route] 現在のチャット履歴 (getHistory() - fileDataParts 追加後):");
+            const safeHistory = JSON.stringify(await chat.getHistory(), (key, value) => {
+                if (key === "data" && typeof value === "string" && value.length > 100) {
+                    return value.slice(0, 50) + "...(省略: " + value.length + "文字)";
+                }
+                return value;
+            }, 2);
+            console.log(safeHistory);
+            console.log("[chat/route] =========================================\n");
 
             response = await chat.sendMessage({ message: messageParts });
             functionCallCount++;
