@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-    createChat,
+    createMcpChat,
+    createImageGenChat,
     parseGeminiResponse,
     GeminiHistoryItem,
 } from "@/lib/gemini";
@@ -51,11 +52,13 @@ export async function POST(request: NextRequest) {
     // 1. リクエストボディのパース & バリデーション
     let message: string;
     let history: GeminiHistoryItem[];
+    let selectedImages: { mimeType: string; data: string }[] | undefined;
 
     try {
         const body = await request.json();
         message = body.message;
         history = body.history ?? [];
+        selectedImages = body.selectedImages;
 
         if (!message || typeof message !== "string" || message.trim() === "") {
             return NextResponse.json(
@@ -80,203 +83,93 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-        // 3. チャットセッション構築
-        let chat = createChat(history);
+        if (selectedImages !== undefined) {
+            // ==========================================
+            // パターンB: 画像選択後（またはツール不要時）
+            // ==========================================
+            let chat = createImageGenChat(history);
 
-        // 4. メッセージ送信
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        let response: any = await chat.sendMessage({ message: message.trim() });
+            const messageParts: Part[] = [{ text: message.trim() }];
 
-        // 5. Function Calling ループ
-        //    Gemini が MCP ツールを呼び出す必要があると判断した場合、
-        //    FunctionCall レスポンスを受け取り、MCPサーバーに実行を依頼して
-        //    結果を Gemini に返す。このループは最大10回で終了する。
-        const mcpClient = createMcpClient();
-        let functionCallCount = 0;
-        const MAX_FUNCTION_CALLS = 10;
-
-        while (hasFunctionCall(response) && functionCallCount < MAX_FUNCTION_CALLS) {
-            const functionCalls = extractFunctionCalls(response);
-            console.log(
-                `[chat/route] Function Call 検出 (${functionCalls.length}件):`,
-                functionCalls.map((fc) => fc.name).join(", ")
-            );
-
-            if (!mcpClient) {
-                // MCP クライアントが利用できない場合はエラーレスポンスを返す
-                const functionResponseParts: Part[] = functionCalls.map((fc) => ({
-                    functionResponse: {
-                        name: fc.name,
-                        response: {
-                            error: "MCPサーバーが設定されていません。MCP_SERVER_URL と AUTH_PASSWORD を確認してください。",
-                        },
-                    },
-                }));
-                response = await chat.sendMessage({ message: functionResponseParts });
-                break;
+            // 選択された画像があれば追加
+            for (const img of selectedImages) {
+                const b64 = img.data.includes(",") ? img.data.split(",")[1] : img.data;
+                messageParts.push({
+                    inlineData: {
+                        mimeType: img.mimeType,
+                        data: b64,
+                    }
+                });
             }
 
-            // 全ての Function Call を並列実行
-            const functionResponses = await Promise.all(
-                functionCalls.map(async (fc) => {
-                    try {
-                        const result = await mcpClient.executeTool(fc.name, fc.args);
+            // 画像生成実行
+            const response = await chat.sendMessage({ message: messageParts });
 
-                        // ===== MCPレスポンスの詳細ログ =====
-                        console.log(`[chat/route] MCPツール "${fc.name}" レスポンス全体:`, JSON.stringify(result, null, 2));
+            // 6. レスポンスのパース
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const parsed = parseGeminiResponse(response as any);
+            return NextResponse.json(parsed, { status: 200 });
 
-                        // content 配列の各要素を個別にログ出力
-                        const mcpResult = result as Record<string, unknown>;
-                        const contents = (mcpResult?.content ?? mcpResult?.contents) as Array<Record<string, unknown>> | undefined;
-                        if (Array.isArray(contents)) {
-                            console.log(`[chat/route] MCPレスポンス content件数: ${contents.length}`);
-                            contents.forEach((item, idx) => {
-                                const type = item?.type;
-                                console.log(`[chat/route]   content[${idx}] type: ${type}`);
-                                if (type === "text") {
-                                    console.log(`[chat/route]   content[${idx}] text: ${item?.text}`);
-                                } else if (type === "image") {
-                                    const mimeType = item?.mimeType ?? item?.mime_type;
-                                    console.log(`[chat/route]   content[${idx}] image, mimeType: ${mimeType}`);
-                                } else {
-                                    console.log(`[chat/route]   content[${idx}] keys: ${Object.keys(item ?? {}).join(", ")}`);
-                                }
-                            });
-                        } else {
-                            console.log(`[chat/route] MCPレスポンスに content 配列が見つかりません。キー一覧: ${Object.keys(mcpResult ?? {}).join(", ")}`);
-                        }
-                        // ===== ログここまで =====
+        } else {
+            // ==========================================
+            // パターンA: 初回リクエスト（MCPツール判定）
+            // ==========================================
+            let chat = createMcpChat(history);
+            let response = await chat.sendMessage({ message: message.trim() });
 
-                        return {
-                            functionResponse: {
-                                name: fc.name,
-                                response: result as Record<string, unknown>,
-                            },
-                        };
-                    } catch (err) {
-                        const errMsg =
-                            err instanceof Error ? err.message : String(err);
-                        console.error(
-                            `[chat/route] MCPツール "${fc.name}" の実行エラー:`,
-                            errMsg
-                        );
-                        return {
-                            functionResponse: {
-                                name: fc.name,
-                                response: {
-                                    error: `ツールの実行に失敗しました: ${errMsg}`,
-                                },
-                            },
-                        };
-                    }
-                })
-            );
+            if (hasFunctionCall(response)) {
+                const functionCalls = extractFunctionCalls(response);
+                console.log(
+                    `[chat/route] Function Call 検出 (${functionCalls.length}件):`,
+                    functionCalls.map((fc) => fc.name).join(", ")
+                );
 
-            // Function Response と 抽出した fileData を Gemini に返す
-            const messageParts: Part[] = [];
-            const fileDataParts: Part[] = [];
-            for (const fr of functionResponses) {
-                // 1. 本来の functionResponse を追加
-                messageParts.push({
-                    functionResponse: {
-                        name: fr.functionResponse.name,
-                        response: fr.functionResponse.response,
-                    },
-                });
+                const mcpClient = createMcpClient();
+                if (!mcpClient) {
+                    return NextResponse.json(
+                        { error: "MCPサーバーが設定されていません。" },
+                        { status: 500 }
+                    );
+                }
 
-                // 2. response 内のテキストから fileData JSON を抽出して追加
-                const mcpResult = fr.functionResponse.response as Record<string, unknown>;
-                const contents = (mcpResult?.content ?? mcpResult?.contents) as Array<Record<string, unknown>> | undefined;
+                const fetchedImages: { mimeType: string; data: string }[] = [];
 
-                if (Array.isArray(contents)) {
-                    for (const item of contents) {
-                        if (item.type === "text" && typeof item.text === "string") {
-                            const fileDataRegex = /```json\s*(\{[\s\S]*?"fileData"[\s\S]*?\})\s*```/g;
-                            let match;
-                            while ((match = fileDataRegex.exec(item.text)) !== null) {
-                                try {
-                                    const parsed = JSON.parse(match[1]);
-                                    if (parsed?.fileData?.fileUri && parsed?.fileData?.mimeType) {
-                                        fileDataParts.push({
-                                            fileData: {
-                                                fileUri: parsed.fileData.fileUri,
-                                                mimeType: parsed.fileData.mimeType,
-                                            },
+                await Promise.all(
+                    functionCalls.map(async (fc) => {
+                        try {
+                            const result = await mcpClient.executeTool(fc.name, fc.args);
+                            const mcpResult = result as Record<string, unknown>;
+                            const contents = (mcpResult?.content ?? mcpResult?.contents) as Array<Record<string, unknown>> | undefined;
+
+                            if (Array.isArray(contents)) {
+                                for (const item of contents) {
+                                    if (item.type === "image" && typeof item.data === "string") {
+                                        const mimeType = item.mimeType ?? item.mime_type ?? "image/jpeg";
+                                        fetchedImages.push({
+                                            mimeType: String(mimeType),
+                                            data: item.data,
                                         });
-                                        console.log(`[chat/route] 抽出した fileData を履歴のユーザーパートに追加予定: ${parsed.fileData.fileUri}`);
                                     }
-                                } catch (e) {
-                                    console.warn("[chat/route] fileData JSON のパースに失敗しました:", match[1]);
                                 }
                             }
-                        } else if (item.type === "image" && typeof item.data === "string") {
-                            // MCPの画像データ(base64)を抽出して追加
-                            const mimeType = item.mimeType ?? item.mime_type ?? "image/jpeg";
-                            fileDataParts.push({
-                                inlineData: {
-                                    data: item.data,
-                                    mimeType: String(mimeType),
-                                }
-                            });
-                            console.log(`[chat/route] 抽出した画像(inlineData)を履歴のユーザーパートに追加予定: ${mimeType}`);
+                        } catch (err) {
+                            console.error(`[chat/route] MCPツール "${fc.name}" の実行エラー:`, err);
                         }
-                    }
-                }
+                    })
+                );
+
+                // 画像抽出リストをそのままフロントエンドに返却（生成は行わない）
+                return NextResponse.json({
+                    type: "mcp_results",
+                    images: fetchedImages
+                }, { status: 200 });
+            } else {
+                // MCPツール不要（雑談など）の場合
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const parsed = parseGeminiResponse(response as any);
+                return NextResponse.json(parsed, { status: 200 });
             }
-            // 抽出した画像がある場合は、エラーを避けるため functionResponse とは別に、
-            // 履歴上の「直前のユーザーメッセージ」に遡って画像パートを追加する
-            if (fileDataParts.length > 0) {
-                const historySnapshot = await chat.getHistory();
-                for (let i = historySnapshot.length - 1; i >= 0; i--) {
-                    if (historySnapshot[i].role === "user") {
-                        if (!historySnapshot[i].parts) {
-                            historySnapshot[i].parts = [];
-                        }
-                        historySnapshot[i].parts!.push(...fileDataParts as never[]);
-                        break;
-                    }
-                }
-                // getHistory() から返される配列はクローンのため、
-                // 変更を反映させるにはチャットセッションを再構築する必要がある
-                chat = createChat(historySnapshot as unknown as GeminiHistoryItem[]);
-            }
-
-            console.log("\n[chat/route] =========================================");
-            console.log("[chat/route] Gemini API に送信する直前のメッセージ内容 (messageParts):");
-            // functionResponse 内の巨大なbase64ログ出力を省略するためのヘルパー
-            const safeMessageParts = JSON.stringify(messageParts, (key, value) => {
-                if (key === "data" && typeof value === "string" && value.length > 100) {
-                    return value.slice(0, 50) + "...(省略: " + value.length + "文字)";
-                }
-                return value;
-            }, 2);
-            console.log(safeMessageParts);
-
-            console.log("[chat/route] 現在のチャット履歴 (getHistory() - fileDataParts 追加後):");
-            const safeHistory = JSON.stringify(await chat.getHistory(), (key, value) => {
-                if (key === "data" && typeof value === "string" && value.length > 100) {
-                    return value.slice(0, 50) + "...(省略: " + value.length + "文字)";
-                }
-                return value;
-            }, 2);
-            console.log(safeHistory);
-            console.log("[chat/route] =========================================\n");
-
-            response = await chat.sendMessage({ message: messageParts });
-            functionCallCount++;
         }
-
-        if (functionCallCount >= MAX_FUNCTION_CALLS) {
-            console.warn(
-                `[chat/route] Function Calling が最大回数 (${MAX_FUNCTION_CALLS}) に達しました`
-            );
-        }
-
-        // 6. レスポンスのパース
-        const parsed = parseGeminiResponse(response);
-
-        // 7. JSON レスポンス返却
-        return NextResponse.json(parsed, { status: 200 });
     } catch (error: unknown) {
         console.error("[chat/route] Gemini API エラー:", error);
 

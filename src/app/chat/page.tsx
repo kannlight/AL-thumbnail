@@ -4,6 +4,7 @@ import React, { useRef, useEffect } from 'react';
 import { PlusCircle, AlertCircle } from 'lucide-react';
 import { ChatMessage } from '@/components/chat/ChatMessage';
 import { ChatInput } from '@/components/chat/ChatInput';
+import { ImageSelectionModal } from '@/components/chat/ImageSelectionModal';
 import { useChat } from '@/hooks/useChat';
 import { listSessions } from '@/stores/chatStore';
 
@@ -15,6 +16,9 @@ export default function ChatPage() {
         sendMessage,
         startNewChat,
         loadSession,
+        pendingMcpImages,
+        submitSelectedImages,
+        cancelMcpSelection,
     } = useChat();
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -66,6 +70,15 @@ export default function ChatPage() {
                     <AlertCircle className="text-red-400" size={20} />
                     <p className="text-red-200 text-sm">{error}</p>
                 </div>
+            )}
+
+            {/* モーダル表示 */}
+            {pendingMcpImages && (
+                <ImageSelectionModal
+                    images={pendingMcpImages}
+                    onSubmit={submitSelectedImages}
+                    onCancel={cancelMcpSelection}
+                />
             )}
 
             {/* メッセージエリア */}

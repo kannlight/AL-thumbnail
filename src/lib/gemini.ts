@@ -25,13 +25,19 @@ export const GEMINI_MODEL =
 // ============================================================
 // システムプロンプト
 // ============================================================
-export const SYSTEM_INSTRUCTION =
-    "あなたは遊戯王OCGの対戦動画サムネイルを作成するアシスタントです。\n" +
-    "以下のルールに従い、サムネイル画像を生成してください。\n" +
-    "1. ユーザーの要望に応じて、必ずMCPツール（get_theme_illustrations または get_card_illustration）を使用し、関連するイラストのURLを取得する。\n" +
-    "2. 取得したイラストを参照画像として扱う。参照画像の配置や背景を変更する程度に留め、できるだけ参照画像をそのまま使用する。\n" +
-    "3. 参照画像を正しく認識できない場合はエラーが起きたことをユーザーへ伝える。\n" +
-    "4. アスペクト比は16:9で生成する。\n";
+export const MCP_AGENT_PROMPT =
+    + "# 役割\n"
+    + "あなたは、遊戯王の対戦動画用のサムネイル画像を生成するための情報収集アシスタントです。\n"
+    + "ユーザーからの入力（対戦デッキ名など）から、必要な参照画像を判断し、MCPツールを呼び出してください。\n"
+    + "# ルール\n"
+    + "1. **テーマ名の場合:** `get_theme_illustrations` を使用する。\n"
+    + "2. **特定のカード名の場合:** `get_card_illustration` を使用する。\n"
+    + "3. 画像検索が必要ない入力（単なる挨拶や雑談など）に対してはツールを呼ばず、そのままテキストで返答してください。\n";
+
+export const IMAGE_GEN_AGENT_PROMPT =
+    + "# 役割\n"
+    + "あなたは、遊戯王の対戦動画用のサムネイル画像を生成する専用アシスタント（デザイナー）です。\n"
+    + "ユーザーの要望（構図、テキスト等の指示）と、提供された参照画像（コンテキスト内の画像）を使って、魅力的なサムネイル画像を生成してください。\n"
 
 // ============================================================
 // Generation Config
@@ -52,7 +58,7 @@ export const MCP_TOOLS = [
         functionDeclarations: [
             {
                 name: "get_card_illustration",
-                description: "指定したカードのイラストURLを取得します。",
+                description: "指定したカードのイラスト画像を取得します。",
                 parameters: {
                     type: Type.OBJECT,
                     properties: {
@@ -66,7 +72,7 @@ export const MCP_TOOLS = [
             },
             {
                 name: "get_theme_illustrations",
-                description: "指定したテーマに属するカードのイラストURLを最大10件取得します。",
+                description: "指定したテーマに属するカードのイラスト画像を最大10件取得します。",
                 parameters: {
                     type: Type.OBJECT,
                     properties: {
@@ -101,18 +107,29 @@ export interface GeminiHistoryItem {
 // ============================================================
 // チャットセッション作成
 // ============================================================
-export function createChat(history: GeminiHistoryItem[]): Chat {
+export function createMcpChat(history: GeminiHistoryItem[]): Chat {
+    const ai = getAI();
+    return ai.chats.create({
+        model: "gemini-3-flash-preview",
+        config: {
+            systemInstruction: MCP_AGENT_PROMPT,
+            tools: MCP_TOOLS,
+        },
+        history,
+    });
+}
+
+export function createImageGenChat(history: GeminiHistoryItem[]): Chat {
     const ai = getAI();
     return ai.chats.create({
         model: GEMINI_MODEL,
         config: {
-            systemInstruction: SYSTEM_INSTRUCTION,
+            systemInstruction: IMAGE_GEN_AGENT_PROMPT,
             responseModalities: ["TEXT", "IMAGE"],
             imageConfig: {
                 aspectRatio: "16:9",
                 imageSize: "1K",
             },
-            tools: MCP_TOOLS,
         },
         history,
     });

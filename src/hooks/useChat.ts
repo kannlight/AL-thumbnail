@@ -17,6 +17,10 @@ export function useChat() {
     const [error, setError] = useState<string | null>(null);
     const [currentSessionId, setCurrentSessionId] = useState<string>("");
 
+    // MCP画像選択待ちのステート
+    const [pendingMcpImages, setPendingMcpImages] = useState<{ mimeType: string; data: string }[] | null>(null);
+    const [pendingMessage, setPendingMessage] = useState<string>("");
+
     useEffect(() => {
         // 新しいセッションIDを発行して管理する
         const sessionId = Date.now().toString();
@@ -26,6 +30,8 @@ export function useChat() {
     const startNewChat = useCallback(() => {
         setMessages([]);
         setError(null);
+        setPendingMcpImages(null);
+        setPendingMessage("");
         setCurrentSessionId(Date.now().toString());
     }, []);
 
@@ -43,6 +49,8 @@ export function useChat() {
         setMessages(updatedMessages);
         setIsLoading(true);
         setError(null);
+        setPendingMcpImages(null);
+        setPendingMessage("");
 
         try {
             // Gemini APIのhistory形式に変換 (直近10ターン分程度に絞る)
@@ -110,6 +118,14 @@ export function useChat() {
 
             const data = await res.json();
 
+            // MCPツール実行結果による画像一覧が返ってきた場合（生成前）
+            if (data.type === "mcp_results") {
+                setPendingMcpImages(data.images || []);
+                setPendingMessage(text);
+                setIsLoading(false);
+                return;
+            }
+
             // AIからの画像を処理
             // Data URI 形式 ("data:image/png;base64,...") で保持する
             // → <img src> でもそのまま表示可能、API送信時も Base64 を抽出可能
@@ -162,6 +178,120 @@ export function useChat() {
         }
     }, [messages, currentSessionId]);
 
+    const submitSelectedImages = useCallback(async (selectedImages: { mimeType: string; data: string }[]) => {
+        if (!pendingMessage) return;
+
+        setIsLoading(true);
+        setError(null);
+
+        try {
+            // 最新のメッセージはユーザーの pendingMessage のはず
+            const historyToSend = messages.slice(-20).map(msg => {
+                const parts: any[] = [];
+                const isModel = msg.role === "assistant";
+
+                if (msg.text || !isModel) {
+                    const textPart: any = { text: msg.text };
+                    if (msg.textThoughtSignature) textPart.thoughtSignature = msg.textThoughtSignature;
+                    parts.push(textPart);
+                }
+
+                if (msg.images && msg.images.length > 0) {
+                    for (const img of msg.images) {
+                        const b64 = img.data.includes(",") ? img.data.split(",")[1] : img.data;
+                        if (b64) {
+                            const imgPart: any = { inlineData: { mimeType: img.mimeType, data: b64 } };
+                            if (img.thoughtSignature) imgPart.thoughtSignature = img.thoughtSignature;
+                            parts.push(imgPart);
+                        }
+                    }
+                }
+
+                return { role: msg.role === "user" ? "user" : "model", parts };
+            });
+
+            const history = historyToSend.slice(0, -1);
+
+            const res = await fetch("/api/chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    message: pendingMessage,
+                    history: history,
+                    selectedImages: selectedImages,
+                })
+            });
+
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({}));
+                throw new Error(errorData.error || `エラーが発生しました (${res.status})`);
+            }
+
+            const data = await res.json();
+
+            const newImages = [];
+            if (data.images && data.images.length > 0) {
+                for (let i = 0; i < data.images.length; i++) {
+                    const img = data.images[i];
+                    const imageId = `img-${Date.now()}-${i}`;
+                    const dataUri = `data:${img.mimeType};base64,${img.data}`;
+
+                    try {
+                        const resBlob = await fetch(dataUri);
+                        const blob = await resBlob.blob();
+                        await saveImage(currentSessionId, imageId, blob);
+                    } catch (e) {
+                        console.warn("IndexedDB への画像保存に失敗:", e);
+                    }
+
+                    newImages.push({
+                        id: imageId,
+                        mimeType: img.mimeType,
+                        data: dataUri,
+                        thoughtSignature: img.thoughtSignature,
+                    });
+                }
+            }
+
+            const newAiMessage: ChatMessage = {
+                id: (Date.now() + 1).toString(),
+                role: "assistant",
+                text: data.text || "",
+                images: newImages.length > 0 ? newImages : undefined,
+                timestamp: Date.now(),
+                textThoughtSignature: data.textThoughtSignature,
+            };
+
+            const finalMessages = [...messages, newAiMessage];
+            setMessages(finalMessages);
+            saveHistory(currentSessionId, finalMessages);
+
+            // 完了後は選択状態リセット
+            setPendingMcpImages(null);
+            setPendingMessage("");
+
+        } catch (err: any) {
+            console.error("チャット送信エラー:", err);
+            setError(err.message || "予期せぬエラーが発生しました");
+        } finally {
+            setIsLoading(false);
+        }
+    }, [messages, currentSessionId, pendingMessage]);
+
+    const cancelMcpSelection = useCallback(() => {
+        setPendingMcpImages(null);
+        setPendingMessage("");
+        setMessages((prev) => {
+            const newMessages = [...prev];
+            // ユーザーの最後のリクエストを取り消す
+            if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === "user") {
+                newMessages.pop();
+            }
+            return newMessages;
+        });
+        setIsLoading(false);
+    }, []);
+
     // 履歴を復元する関数
     const loadSession = useCallback(async (sessionId: string) => {
         try {
@@ -198,5 +328,10 @@ export function useChat() {
         startNewChat,
         currentSessionId,
         loadSession,
+
+        // 新しく追加したステートと関数
+        pendingMcpImages,
+        submitSelectedImages,
+        cancelMcpSelection,
     };
 }
