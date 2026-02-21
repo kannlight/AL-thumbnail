@@ -138,8 +138,14 @@ export async function POST(request: NextRequest) {
                     functionCalls.map(async (fc) => {
                         try {
                             const result = await mcpClient.executeTool(fc.name, fc.args);
-                            const mcpResult = result as Record<string, unknown>;
-                            const contents = (mcpResult?.content ?? mcpResult?.contents) as Array<Record<string, unknown>> | undefined;
+
+                            let contents: Array<Record<string, unknown>> = [];
+                            if (Array.isArray(result)) {
+                                contents = result;
+                            } else {
+                                const mcpResult = result as Record<string, unknown>;
+                                contents = (mcpResult?.content ?? mcpResult?.contents ?? []) as Array<Record<string, unknown>>;
+                            }
 
                             if (Array.isArray(contents)) {
                                 for (const item of contents) {
