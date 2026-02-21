@@ -28,3 +28,5 @@ env:
     secret: AUTH_PASSWORD
   - variable: JWT_SECRET
     secret: JWT_SECRET
+  - variable: MCP_SERVER_URL
+    value: https://ygo-cardimage-mcp-609502277631.asia-northeast1.run.app/sse
