@@ -181,8 +181,13 @@ export function useChat() {
     const submitSelectedImages = useCallback(async (selectedImages: { mimeType: string; data: string }[]) => {
         if (!pendingMessage) return;
 
+        const currentMessage = pendingMessage;
+
         setIsLoading(true);
         setError(null);
+        // 処理開始と同時にモーダルを閉じる
+        setPendingMcpImages(null);
+        setPendingMessage("");
 
         try {
             // 最新のメッセージはユーザーの pendingMessage のはず
@@ -216,7 +221,7 @@ export function useChat() {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    message: pendingMessage,
+                    message: currentMessage,
                     history: history,
                     selectedImages: selectedImages,
                 })
@@ -265,10 +270,6 @@ export function useChat() {
             const finalMessages = [...messages, newAiMessage];
             setMessages(finalMessages);
             saveHistory(currentSessionId, finalMessages);
-
-            // 完了後は選択状態リセット
-            setPendingMcpImages(null);
-            setPendingMessage("");
 
         } catch (err: any) {
             console.error("チャット送信エラー:", err);

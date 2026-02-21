@@ -9,6 +9,7 @@ interface ImageSelectionModalProps {
 
 export function ImageSelectionModal({ images, onSubmit, onCancel }: ImageSelectionModalProps) {
     const [selectedIndexes, setSelectedIndexes] = useState<Set<number>>(new Set());
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     const toggleSelection = (index: number) => {
         const newSet = new Set(selectedIndexes);
@@ -21,8 +22,12 @@ export function ImageSelectionModal({ images, onSubmit, onCancel }: ImageSelecti
     };
 
     const handleSubmit = () => {
+        setIsSubmitting(true);
         const selected = images.filter((_, i) => selectedIndexes.has(i));
-        onSubmit(selected); // 0個でもテキスト指示のみで生成試行とする
+        // 少し待機してボタンの変更をユーザーに見せる
+        setTimeout(() => {
+            onSubmit(selected); // 0個でもテキスト指示のみで生成試行とする
+        }, 150);
     };
 
     return (
@@ -88,9 +93,12 @@ export function ImageSelectionModal({ images, onSubmit, onCancel }: ImageSelecti
                     </button>
                     <button
                         onClick={handleSubmit}
-                        className="px-5 py-2.5 rounded-lg font-medium bg-blue-600 hover:bg-blue-500 text-white transition-colors shadow-lg shadow-blue-900/20"
+                        disabled={isSubmitting}
+                        className="px-5 py-2.5 rounded-lg font-medium bg-blue-600 hover:bg-blue-500 text-white transition-colors shadow-lg shadow-blue-900/20 disabled:opacity-70 disabled:cursor-not-allowed"
                     >
-                        {selectedIndexes.size > 0 ? `${selectedIndexes.size}枚を選択して生成` : '画像なしで生成'}
+                        {isSubmitting
+                            ? '生成準備中...'
+                            : (selectedIndexes.size > 0 ? `${selectedIndexes.size}枚を選択して生成` : '画像なしで生成')}
                     </button>
                 </div>
             </div>
