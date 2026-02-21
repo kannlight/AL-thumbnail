@@ -15,7 +15,9 @@ export const ImagePreview: React.FC<ImagePreviewProps> = ({ image }) => {
         const link = document.createElement('a');
         link.href = image.data;
         const date = new Date();
-        const filename = `al-thumbnail-${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}-${String(date.getHours()).padStart(2, '0')}${String(date.getMinutes()).padStart(2, '0')}${String(date.getSeconds()).padStart(2, '0')}.png`;
+        const extension = image.mimeType ? image.mimeType.split('/')[1] : 'png';
+        const ext = extension === 'jpeg' ? 'jpg' : extension;
+        const filename = `al-thumbnail-${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}-${String(date.getHours()).padStart(2, '0')}${String(date.getMinutes()).padStart(2, '0')}${String(date.getSeconds()).padStart(2, '0')}.${ext}`;
         link.download = filename;
         document.body.appendChild(link);
         link.click();
