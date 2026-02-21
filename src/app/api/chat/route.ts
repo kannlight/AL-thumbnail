@@ -169,9 +169,12 @@ export async function POST(request: NextRequest) {
                     images: fetchedImages
                 }, { status: 200 });
             } else {
-                // MCPツール不要（雑談など）の場合
+                // MCPツール不要と判断された場合、参照画像なしで画像生成エージェントを実行する
+                const chat = createImageGenChat(history);
+                const messageParts: Part[] = [{ text: message.trim() }];
+                const imgResponse = await chat.sendMessage({ message: messageParts });
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const parsed = parseGeminiResponse(response as any);
+                const parsed = parseGeminiResponse(imgResponse as any);
                 return NextResponse.json(parsed, { status: 200 });
             }
         }
