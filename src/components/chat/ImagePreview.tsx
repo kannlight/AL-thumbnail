@@ -27,13 +27,13 @@ export const ImagePreview: React.FC<ImagePreviewProps> = ({ image }) => {
     return (
         <>
             <div
-                className="relative group w-48 h-48 sm:w-64 sm:h-64 rounded-lg overflow-hidden border border-gray-700 cursor-pointer"
+                className="relative group w-64 sm:w-80 aspect-video rounded-lg overflow-hidden border border-gray-700 cursor-pointer bg-black/20"
                 onClick={() => setIsFullscreen(true)}
             >
                 <img
                     src={image.data}
                     alt="Generated Preview"
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-contain"
                 />
 
                 {/* ホバー時のオーバーレイ */}
